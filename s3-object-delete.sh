@@ -10,7 +10,7 @@ FIRST_BUCKET_NAME=$1
 SECOND_BUCKET_NAME=$2
 PROFILE=$3
 PATTERN="test"
-FOLDER_PATH="env:/"
+FOLDER_PATH="demo:/"
 
 
 delete_object_first_bucket(){
