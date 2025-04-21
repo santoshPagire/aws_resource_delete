@@ -208,9 +208,8 @@ delete_efs() {
     done
 }
 
-# Function to delete ECS Clusters
 delete_ecs() {
-    # Get the list of all ECS clusters
+    # Get list of ECS clusters
     CLUSTER_INFO=$(aws ecs list-clusters --region "$REGION" --profile "$PROFILE" --query 'clusterArns[*]' --output text)
 
     if [ -z "$CLUSTER_INFO" ]; then
@@ -221,13 +220,9 @@ delete_ecs() {
     echo "The following ECS clusters were found in region '$REGION':"
     echo "$CLUSTER_INFO"
 
-    # Filter ECS clusters that contain the pattern in their name
     MATCHING_CLUSTER_ARNS=()
     for CLUSTER_ARN in $CLUSTER_INFO; do
-        # Extract the cluster name from the ARN
         CLUSTER_NAME=$(basename "$CLUSTER_ARN")
-
-        # Check if the Name contains the pattern.
         if [[ -n "$CLUSTER_NAME" && "${CLUSTER_NAME,,}" == *"${PATTERN,,}"* ]]; then
             MATCHING_CLUSTER_ARNS+=("$CLUSTER_ARN")
             echo "Found matching cluster: $CLUSTER_NAME with ARN: $CLUSTER_ARN"
@@ -235,30 +230,79 @@ delete_ecs() {
     done
 
     if [ ${#MATCHING_CLUSTER_ARNS[@]} -eq 0 ]; then
-        echo "No ECS clusters found with the name containing '$PATTERN' in region '$REGION'."
+        echo "No ECS clusters found matching '$PATTERN'."
         return
     fi
 
     echo "The following matching ECS clusters were found:"
     printf '%s\n' "${MATCHING_CLUSTER_ARNS[@]}"
 
-    read -p "Do you want to delete these ECS clusters? (yes/no): " CONFIRMATION
+    for CLUSTER_ARN in "${MATCHING_CLUSTER_ARNS[@]}"; do
+        CLUSTER_NAME=$(basename "$CLUSTER_ARN")
+        echo ""
+        echo "Processing ECS cluster: $CLUSTER_NAME"
+
+        # List services
+        SERVICES=$(aws ecs list-services \
+            --cluster "$CLUSTER_NAME" \
+            --region "$REGION" \
+            --profile "$PROFILE" \
+            --query 'serviceArns[*]' \
+            --output text)
+
+        if [ -n "$SERVICES" ]; then
+            echo "The following services are in cluster '$CLUSTER_NAME':"
+            echo "$SERVICES"
+            
+            read -p "Do you want to delete these services from cluster '$CLUSTER_NAME'? (yes/no): " DELETE_SERVICES
+
+            if [[ "$DELETE_SERVICES" == "yes" ]]; then
+                for SERVICE_ARN in $SERVICES; do
+                    SERVICE_NAME=$(basename "$SERVICE_ARN")
+                    echo "Deleting service: $SERVICE_NAME"
+
+                    # Delete service
+                    aws ecs delete-service \
+                        --cluster "$CLUSTER_NAME" \
+                        --service "$SERVICE_NAME" \
+                        --force \
+                        --region "$REGION" \
+                        --profile "$PROFILE" >/dev/null
+
+                    echo "Waiting for service $SERVICE_NAME to be fully deleted..."
+                    aws ecs wait services-inactive \
+                        --cluster "$CLUSTER_NAME" \
+                        --services "$SERVICE_NAME" \
+                        --region "$REGION" \
+                        --profile "$PROFILE"
+
+                    echo "Service $SERVICE_NAME deleted."
+                done
+            else
+                echo "Skipped service deletion for cluster: $CLUSTER_NAME"
+            fi
+        else
+            echo "No services found in cluster '$CLUSTER_NAME'."
+        fi
+    done
+
+    read -p "Do you want to delete these ECS clusters now that services are handled? (yes/no): " CONFIRMATION
 
     if [[ "$CONFIRMATION" != "yes" ]]; then
-        echo "Aborting deletion process for ECS clusters."
+        echo "Aborting ECS cluster deletion."
         return
     fi
 
-    # Loop through each matching ECS cluster and delete it
     for CLUSTER_ARN in "${MATCHING_CLUSTER_ARNS[@]}"; do
         CLUSTER_NAME=$(basename "$CLUSTER_ARN")
         echo "Attempting to delete ECS cluster: $CLUSTER_NAME"
-
-        # Delete the ECS cluster
-        if aws ecs delete-cluster --region "$REGION" --profile "$PROFILE" --cluster "$CLUSTER_NAME"; then
+        if aws ecs delete-cluster \
+            --cluster "$CLUSTER_NAME" \
+            --region "$REGION" \
+            --profile "$PROFILE"; then
             echo "Successfully deleted ECS cluster: $CLUSTER_NAME"
         else
-            echo "Failed to delete ECS cluster: $CLUSTER_NAME. Please check the permissions or the state of the cluster."
+            echo "Failed to delete ECS cluster: $CLUSTER_NAME"
         fi
     done
 }
