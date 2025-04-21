@@ -53,8 +53,8 @@ delete_log_groups() {
     if [[ "$confirm" == "yes" ]]; then
         echo "$log_groups" | jq -r '.[]' | while read -r log_group; do
             log_group_cleaned=$(echo "$log_group" | xargs)
-            echo "Deleting log group: $log_group"
-            aws logs delete-log-group --log-group-name "$log_group" --region "$REGION" --profile "$PROFILE"
+            echo "Deleting log group: $log_group_cleaned"
+            aws logs delete-log-group --log-group-name "$log_group_cleaned" --region "$REGION" --profile "$PROFILE"
         done
         echo "Deletion completed."
     else
@@ -80,8 +80,8 @@ delete_cloudwatch_alarms() {
     if [[ "$confirm" == "yes" ]]; then
         echo "$alarms" | jq -r '.[]' | while read -r alarm; do
             alarm_cleaned=$(echo "$alarm" | xargs)
-            echo "Deleting CloudWatch alarm: $alarm"
-            aws cloudwatch delete-alarms --alarm-names "$alarm" --region "$REGION" --profile "$PROFILE"
+            echo "Deleting CloudWatch alarm: $alarm_cleaned"
+            aws cloudwatch delete-alarms --alarm-names "$alarm_cleaned" --region "$REGION" --profile "$PROFILE"
         done
         echo "Deletion completed."
     else
